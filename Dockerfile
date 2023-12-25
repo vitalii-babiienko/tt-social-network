@@ -2,6 +2,7 @@ FROM python:3.11.3-slim-buster
 LABEL author="vitalii-babiienko"
 
 ENV PYTHONUNBUFFERED 1
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 
 WORKDIR app/
 

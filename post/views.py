@@ -1,9 +1,13 @@
+from datetime import datetime, timedelta
+
 from django.db.models import Count
+from django.db.models.functions import TruncDate
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from post.models import (
     Hashtag,
@@ -209,3 +213,65 @@ class PostViewSet(UploadImageMixin, viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+
+class LikesAnalyticsView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=["Likes Analytics"],
+        parameters=[
+            OpenApiParameter(
+                name="date_from",
+                type=str,
+                description="Start date for analytics (YYYY-MM-DD)",
+                required=True,
+            ),
+            OpenApiParameter(
+                name="date_to",
+                type=str,
+                description="End date for analytics (YYYY-MM-DD)",
+                required=True,
+            ),
+        ],
+    )
+    def get(self, request, *args, **kwargs):
+        date_from_param = request.GET.get("date_from", "")
+        date_to_param = request.GET.get("date_to", "")
+
+        if not date_from_param or not date_to_param:
+            return Response(
+                {"error": "Both date_from and date_to are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            date_from = datetime.strptime(date_from_param, "%Y-%m-%d")
+            date_to = (datetime.strptime(date_to_param, "%Y-%m-%d")
+                       + timedelta(days=1))
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        analytics_data = Post.objects.filter(
+            likes__isnull=False,
+            created_at__range=(date_from, date_to)
+        ).annotate(
+            day=TruncDate("created_at")
+        ).values(
+            "day"
+        ).annotate(
+            likes_count=Count("likes")
+        )
+
+        response_data = [
+            {
+                "date": item["day"].strftime("%Y-%m-%d"),
+                "likes_count": item["likes_count"],
+            }
+            for item in analytics_data
+        ]
+
+        return Response(response_data, status=status.HTTP_200_OK)
